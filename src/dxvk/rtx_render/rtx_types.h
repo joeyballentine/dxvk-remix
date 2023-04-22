@@ -114,6 +114,11 @@ struct RaytraceGeometry {
   }
 };
 
+struct AxisAlignBoundingBox {
+  Vector3 minPos = { FLT_MAX, FLT_MAX, FLT_MAX };
+  Vector3 maxPos = { -FLT_MAX, -FLT_MAX, -FLT_MAX };
+};
+
 // Stores a snapshot of the geometry state for a draw call.
 // WARNING: Usage is undefined after the drawcall this was 
 //          generated from has finished executing on the GPU
@@ -140,6 +145,9 @@ struct RasterGeometry {
   RasterBuffer indexBuffer;
   RasterBuffer blendWeightBuffer;
   RasterBuffer blendIndicesBuffer;
+
+  AxisAlignBoundingBox boundingBox;
+  std::shared_future<AxisAlignBoundingBox> futureBoundingBox;
 
   const XXH64_hash_t getHashForRule(const HashRule& rule) const {
     XXH64_hash_t hashResult = kEmptyHash;
@@ -188,6 +196,24 @@ struct RasterGeometry {
       return false;
 
     if (color0Buffer.defined() && (!positionBuffer.matches(color0Buffer) || positionBuffer.stride() != color0Buffer.stride()))
+      return false;
+
+    return true;
+  }
+
+  bool areFormatsGpuFriendly() const {
+    assert(positionBuffer.defined());
+
+    if (positionBuffer.vertexFormat() != VK_FORMAT_R32G32B32_SFLOAT && positionBuffer.vertexFormat() != VK_FORMAT_R32G32B32A32_SFLOAT)
+      return false;
+
+    if (normalBuffer.defined() && (normalBuffer.vertexFormat() != VK_FORMAT_R32G32B32_SFLOAT && normalBuffer.vertexFormat() != VK_FORMAT_R32G32B32A32_SFLOAT))
+      return false;
+
+    if (texcoordBuffer.defined() && (texcoordBuffer.vertexFormat() != VK_FORMAT_R32G32_SFLOAT && texcoordBuffer.vertexFormat() != VK_FORMAT_R32G32B32_SFLOAT && texcoordBuffer.vertexFormat() != VK_FORMAT_R32G32B32A32_SFLOAT))
+      return false;
+
+    if (color0Buffer.defined() && (color0Buffer.vertexFormat() != VK_FORMAT_B8G8R8A8_UNORM))
       return false;
 
     return true;
@@ -436,6 +462,16 @@ struct DrawCallState {
 
   bool hasTextureCoordinates() const {
     return getGeometryData().texcoordBuffer.defined() || getTransformData().texgenMode != TexGenMode::None;
+  }
+
+  bool finalizeGeometryBoundingBox() {
+    if (!m_geometryData.futureBoundingBox.valid()) {
+      return false;
+    }
+
+    m_geometryData.boundingBox = m_geometryData.futureBoundingBox.get();
+
+    return true;
   }
 
 private:

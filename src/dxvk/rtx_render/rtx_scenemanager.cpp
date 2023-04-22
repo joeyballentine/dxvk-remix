@@ -212,7 +212,7 @@ namespace dxvk {
         // Set up the ideal vertex params, if input vertices are interleaved, it's safe to assume the positionBuffer stride is the vertex stride
         output.vertexCount = input.vertexCount;
 
-        const size_t vertexStride = input.isVertexDataInterleaved() ? input.positionBuffer.stride() : RtxGeometryUtils::computeOptimalVertexStride(input);
+        const size_t vertexStride = (input.isVertexDataInterleaved() && input.areFormatsGpuFriendly()) ? input.positionBuffer.stride() : RtxGeometryUtils::computeOptimalVertexStride(input);
         const size_t vertexBufferSize = output.vertexCount * vertexStride;
 
         // Set up the ideal index params
@@ -990,7 +990,8 @@ namespace dxvk {
         }
       }
     } else {
-      m_lightManager.addLight(*rtLight);
+      // This is a light coming from the game directly, so use the appropriate API for filter rules
+      m_lightManager.addGameLight(light.Type, *rtLight);
     }
   }
 
