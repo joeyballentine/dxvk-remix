@@ -1,0 +1,68 @@
+name: Build-Nightly
+
+on:
+  schedule:
+    # * is a special character in YAML so you have to quote this string
+    - cron: "0 23 * * *"
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-2022
+
+    strategy:
+      matrix:
+        include:
+          - build-flavour: debug
+            output-subdir: _Comp64Debug
+          - build-flavour: release
+            output-subdir: _Comp64Release
+
+    steps:
+      - name: Get current time
+        uses: josStorer/get-current-time@v2.0.1
+        id: current-time
+        with:
+          format: YYYY.MM.DD
+      - name: Setup variables
+        uses: actions/github-script@v6
+        with:
+          script: core.exportVariable('GITHUB_SHA_SHORT', context.sha.substring(0, 7))
+
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - name: Setup Vulkan SDK
+        run: choco install vulkan-sdk -y
+
+      - name: Setup Meson
+        run: pip install meson==0.62.1
+
+      - name: Build
+        shell: pwsh
+        run: |
+          Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process
+          . .\build_common.ps1
+          PerformBuild -BuildFlavour ${{matrix.build-flavour}} -BuildSubDir ${{matrix.output-subdir}} -Backend ninja -EnableTracy false
+
+      - name: Upload binaries
+        uses: actions/upload-artifact@v3
+        with:
+          name: dxvk-remix-${{ steps.current-time.outputs.formattedTime }}-${{matrix.build-flavour}}
+          path: |
+            ${{matrix.output-subdir}}\src\d3d9\d3d9.dll
+            ${{matrix.output-subdir}}\src\d3d9\d3d9.pdb
+      - name: Upload new release assets
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file_glob: true
+          file: ${{matrix.output-subdir}}\src\d3d9\*
+          tag: ${{ steps.current-time.outputs.formattedTime }}
+          overwrite: true
+          body: |
+            Nightly DXVK-Remix build from ${{ steps.current-time.outputs.formattedTime }}
+          release_name: dxvk-remix-${{ steps.current-time.outputs.formattedTime }}
+          prerelease: true
